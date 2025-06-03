@@ -1,0 +1,134 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ice Breaker Question Generator</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body className="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    const iceBreakerQuestions = [
+      "What's the most fun project you've worked on at the company so far?",
+      "If you could swap roles with anyone in the office for a day, who would it be and why?",
+      "What's your go-to snack or coffee order during a work break?",
+      "If our team had to compete in a fun office Olympics, what event would we dominate?",
+      "What's a hidden talent you have that your coworkers might not know about?",
+      "If you could instantly master a work-related skill, what would it be?",
+      "What's the funniest work-related story you can share?",
+      "If our team was stranded on a desert island, who would be the best at survival and why?",
+      "What's your favorite way to unwind after a busy workday?",
+      "If you could plan a team outing anywhere, where would we go?",
+      "What's the most creative idea you've had for a work project?",
+      "If you could have any superpower to make work more fun, what would it be?",
+      "What's the best team-building activity you've ever done?",
+      "If our office had a theme song, what would it be and why?",
+      "What's the most interesting place you've ever joined a virtual meeting from?",
+      "If you could bring one fun gadget to the office, what would it be?",
+      "What's a quirky habit you have while working?",
+      "If our team starred in a movie, what would the genre be and who would play you?",
+      "What's the best work-related advice you've ever received?",
+      "If you could redesign our office for fun, what would you add?"
+    ];
+
+    const App = () => {
+      const [askedIndices, setAskedIndices] = useState([]);
+      const [currentQuestion, setCurrentQuestion] = useState("Click the button to get a random question!");
+
+      const generateQuestion = () => {
+        if (askedIndices.length === iceBreakerQuestions.length) {
+          setAskedIndices([]);
+          setCurrentQuestion("All questions asked! Starting over with a new cycle.");
+          return;
+        }
+
+        let newIndex;
+        do {
+          newIndex = Math.floor(Math.random() * iceBreakerQuestions.length);
+        } while (askedIndices.includes(newIndex));
+
+        setAskedIndices([...askedIndices, newIndex]);
+        setCurrentQuestion(iceBreakerQuestions[newIndex]);
+      };
+
+      const resetHistory = () => {
+        setAskedIndices([]);
+        setCurrentQuestion("History reset! Click the button to start again.");
+      };
+
+      return (
+        <div className="bg-white p-8 rounded-lg shadow-lg max-w-lg w-full text-center">
+          <h1 className="text-3xl font-bold text-gray-800 mb-6">Ice Breaker Question Generator</h1>
+          <p className="text-lg text-gray-600 mb-6">{currentQuestion}</p>
+          <div className="flex justify-center gap-4">
+            <button
+              onClick={generateQuestion}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transition duration-300"
+            >
+              Generate Question
+            </button>
+            <button
+              onClick={resetHistory}
+              className="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-lg transition duration-300"
+            >
+              Reset History
+            </button>
+          </div>
+          <p className="text-sm text-gray-500 mt-4">
+            Asked {askedIndices.length} of {iceBreakerQuestions.length} questions
+          </p>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
