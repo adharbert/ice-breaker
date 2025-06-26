@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Question Generator</title>
+  <title>Ice Breaker Question Generator</title>
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
@@ -13,9 +13,10 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState } = React;
+    const { useState, useEffect } = React;
 
-    const iceBreakerQuestions = [
+    // Fallback questions in case API fails or repeats
+    const fallbackQuestions = [
       "What's the most fun project you've worked on at the company so far?",
       "If you could swap roles with anyone in the office for a day, who would it be and why?",
       "What's your go-to snack or coffee order during a work break?",
@@ -45,50 +46,158 @@
     ];
 
     const App = () => {
-      const [askedIndices, setAskedIndices] = useState([]);
+      const [askedQuestions, setAskedQuestions] = useState(() => {
+        const saved = localStorage.getItem('askedQuestions');
+        return saved ? JSON.parse(saved) : [];
+      });
       const [currentQuestion, setCurrentQuestion] = useState("Click the button to get a fun ice breaker question!");
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState(null);
+      const [retryCount, setRetryCount] = useState(0);
 
-      const generateQuestion = () => {
-        if (askedIndices.length === iceBreakerQuestions.length) {
-          setAskedIndices([]);
-          setCurrentQuestion("All questions asked! Starting over with a new cycle.");
+      useEffect(() => {
+        localStorage.setItem('askedQuestions', JSON.stringify(askedQuestions));
+        console.log('Saved askedQuestions to localStorage:', askedQuestions);
+      }, [askedQuestions]);
+
+      const normalizeQuestion = (question) => {
+        return question.toLowerCase().trim().replace(/[.!?]$/, '');
+      };
+
+      const generateQuestion = async () => {
+        if (loading || retryCount >= 3) {
+          if (retryCount >= 3) {
+            // Fallback to a random question from fallbackQuestions
+            const availableQuestions = fallbackQuestions.filter(q => !askedQuestions.includes(normalizeQuestion(q)));
+            if (availableQuestions.length === 0) {
+              setAskedQuestions([]);
+              setCurrentQuestion("All fallback questions used! History reset.");
+              return;
+            }
+            const newQuestion = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
+            setAskedQuestions([...askedQuestions, normalizeQuestion(newQuestion)]);
+            setCurrentQuestion(newQuestion);
+            setError("Using fallback question due to repeated API failures or duplicates.");
+            setRetryCount(0);
+          }
           return;
         }
 
-        let newIndex;
-        do {
-          newIndex = Math.floor(Math.random() * iceBreakerQuestions.length);
-        } while (askedIndices.includes(newIndex));
+        setLoading(true);
+        setError(null);
 
-        setAskedIndices([...askedIndices, newIndex]);
-        setCurrentQuestion(iceBreakerQuestions[newIndex]);
+        try {
+          const response = await fetch('https://api.x.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer xai-zXebWF0ZoA9EbdV80MxViwjrYnlv0kHIPHVlxageWRpewzvlbTB6ctiOZsmHkvp0EPBPt1jqQWSVbmqC',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'grok-3',
+              messages: [
+                {
+                  role: 'user',
+                  content: `Generate a single fun, work-appropriate ice breaker question for a team meeting. It should encourage positive interaction and be suitable for a professional setting. Return only the question as plain text, without numbering or extra formatting. Ensure the question is unique and different from these previously asked questions: ${askedQuestions.join(', ')}.`
+                }
+              ],
+              max_tokens: 100,
+              temperature: 0.9
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+
+          const data = await response.json();
+          const newQuestion = data.choices[0].message.content.trim();
+
+          if (!newQuestion) {
+            throw new Error('Empty question returned from API');
+          }
+
+          const normalizedQuestion = normalizeQuestion(newQuestion);
+
+          // Check if question was already asked
+          if (askedQuestions.includes(normalizedQuestion)) {
+            console.log('Duplicate question detected:', newQuestion);
+            setRetryCount(retryCount + 1);
+            setLoading(false);
+            generateQuestion(); // Retry
+            return;
+          }
+
+          setAskedQuestions([...askedQuestions, normalizedQuestion]);
+          setCurrentQuestion(newQuestion);
+          setRetryCount(0);
+          console.log('New question generated:', newQuestion);
+        } catch (err) {
+          console.error('Fetch Error:', {
+            message: err.message,
+            status: err.status
+          });
+          let errorMessage = 'Failed to generate question. Using fallback question.';
+          if (err.message.includes('401')) {
+            errorMessage = 'Invalid API key. Please check your xAI API key.';
+          } else if (err.message.includes('429')) {
+            errorMessage = 'API rate limit exceeded. Please try again later.';
+          }
+          
+          setError(errorMessage);
+          
+          // Use a fallback question
+          const availableQuestions = fallbackQuestions.filter(q => !askedQuestions.includes(normalizeQuestion(q)));
+          if (availableQuestions.length === 0) {
+            setAskedQuestions([]);
+            setCurrentQuestion("All fallback questions used! History reset.");
+          } else {
+            const newQuestion = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
+            setAskedQuestions([...askedQuestions, normalizeQuestion(newQuestion)]);
+            setCurrentQuestion(newQuestion);
+          }
+          setRetryCount(retryCount + 1);
+        } finally {
+          setLoading(false);
+        }
       };
 
       const resetHistory = () => {
-        setAskedIndices([]);
+        setAskedQuestions([]);
         setCurrentQuestion("History reset! Click the button to start again.");
+        setError(null);
+        setRetryCount(0);
+        console.log('History reset');
       };
 
       return (
         <div className="flex flex-col items-center justify-center w-full max-w-md bg-white p-6 rounded-lg shadow-lg">
-          <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">Question Generator</h1>
-          <p className="text-lg text-gray-600 mb-6 text-center min-h-[60px]">{currentQuestion}</p>
+          <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">Ice Breaker Question Generator</h1>
+          {loading ? (
+            <p className="text-lg text-gray-600 mb-6 text-center min-h-[60px]">Generating...</p>
+          ) : error ? (
+            <p className="text-lg text-red-600 mb-6 text-center min-h-[60px]">{error}</p>
+          ) : (
+            <p className="text-lg text-gray-600 mb-6 text-center min-h-[60px]">{currentQuestion}</p>
+          )}
           <div className="flex justify-center gap-4 w-full">
             <button
               onClick={generateQuestion}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transition duration-300"
+              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transition duration-300 disabled:opacity-50"
+              disabled={loading}
             >
               Generate Question
             </button>
             <button
               onClick={resetHistory}
-              className="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-lg transition duration-300"
+              className="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-lg transition duration-300 disabled:opacity-50"
+              disabled={loading}
             >
               Reset History
             </button>
           </div>
           <p className="text-sm text-gray-500 mt-4 text-center">
-            Asked {askedIndices.length} of {iceBreakerQuestions.length} questions
+            Asked {askedQuestions.length} questions
           </p>
         </div>
       );
